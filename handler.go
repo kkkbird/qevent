@@ -88,13 +88,13 @@ func (h *Handler) Run(ctx context.Context, dataHandler DataHandler, events ...st
 func (h *Handler) reader(ctx context.Context, events ...string) error {
 	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.consumerName, true, events...)
 
-	devDataArray := make([]eventMsg, 0, h.workerCount*2)
+	eventArray := make([]eventMsg, 0, h.workerCount*2)
 	var first eventMsg
 	var tranChan chan eventMsg
 
 	for {
-		if len(devDataArray) > 0 {
-			first = devDataArray[0]
+		if len(eventArray) > 0 {
+			first = eventArray[0]
 			tranChan = h.dataChan
 		} else {
 			tranChan = nil
@@ -102,15 +102,15 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 
 		select {
 		case <-ctx.Done():
-			for _, d := range devDataArray { // TODO: complete all remain data, may add time.After here
+			for _, d := range eventArray { // TODO: complete all remain data, may add time.After here
 				h.dataChan <- d
 			}
 			close(h.dataChan)
 			return nil
 		case tranChan <- first:
-			devDataArray = devDataArray[1:]
+			eventArray = eventArray[1:]
 		default:
-			if len(devDataArray) > 0 {
+			if len(eventArray) > 0 {
 				time.Sleep(waitFreeWorkerInterval)
 				continue
 			}
@@ -124,7 +124,7 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 			if len(result) > 0 {
 				for k, v := range result {
 					for _, d := range v {
-						devDataArray = append(devDataArray, eventMsg{
+						eventArray = append(eventArray, eventMsg{
 							Event:   k,
 							EventID: d.StreamID,
 							Data:    d.Data,

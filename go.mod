@@ -3,7 +3,7 @@ module github.com/kkkbird/qevent
 go 1.13
 
 require (
-	github.com/go-redis/redis v6.15.6+incompatible	
+	github.com/go-redis/redis v6.15.6+incompatible
 	github.com/kkkbird/qstream v0.0.0-20191119033156-e57c50f6a113
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/viper v1.5.0
