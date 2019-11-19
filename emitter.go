@@ -7,7 +7,9 @@ import (
 	"github.com/kkkbird/qstream"
 )
 
-var ()
+var (
+	defaultMaxLength int64 = 1000
+)
 
 type Emitter struct {
 	client       *redis.Client
@@ -39,7 +41,8 @@ func WithCodecFunc(codecFunc func(event string) qstream.DataCodec) EmitterOpts {
 
 func NewEmitter(client *redis.Client, opts ...EmitterOpts) *Emitter {
 	e := &Emitter{
-		client: client,
+		client:    client,
+		maxLength: defaultMaxLength,
 	}
 
 	for _, o := range opts {
