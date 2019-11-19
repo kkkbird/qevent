@@ -86,7 +86,7 @@ func (h *Handler) Run(ctx context.Context, dataHandler DataHandler, events ...st
 }
 
 func (h *Handler) reader(ctx context.Context, events ...string) error {
-	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.consumerName, false, events...)
+	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.consumerName, true, events...)
 
 	devDataArray := make([]eventMsg, 0, h.workerCount*2)
 	var first eventMsg
