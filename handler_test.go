@@ -48,15 +48,48 @@ func (s *HandlerTestSuite) TestHandleSimple() {
 	}
 	log.Infof(streamid)
 
-	handler := NewHandler(s.redisClient, qstream.JsonCodec(SimpleData{}), "testgroup", "testcosumer")
+	handler := NewHandler(s.redisClient, qstream.JsonCodec(SimpleData{}), "testgroup", "testconsumer")
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	handler.Run(ctx, func(event string, eventId string, data interface{}) error {
-		log.Infof("event=%s,id=%s,data=%#v", event, eventId, data)
+		log.Infof("recv event=%s,id=%s,data=%#v", event, eventId, data)
 		cancel()
 		return nil
 	}, event)
+}
+
+func (s *HandlerTestSuite) TestHandleSimpleWithAck() {
+	event := "qevent:testack"
+	emitter := NewEmitter(s.redisClient)
+
+	d := &SimpleData{
+		ID:      4567,
+		Message: "emit event with ack",
+	}
+
+	streamid, err := emitter.Emit(event, d)
+
+	if !s.NoError(err) {
+		return
+	}
+	log.Infof(streamid)
+
+	handler := NewHandler(s.redisClient, qstream.JsonCodec(SimpleData{}), "testgroup", "testconsumer", WithAck())
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	handler.Run(ctx, func(event string, eventId string, data interface{}) error {
+		log.Infof("recv event=%s,id=%s,data=%#v", event, eventId, data)
+		return nil
+	}, event)
+
+	go func() {
+		time.Sleep(time.Second * 10)
+		cancel()
+	}()
+
+	<-ctx.Done()
 }
 
 func TestHandler(t *testing.T) {
