@@ -28,6 +28,7 @@ type Handler struct {
 	dataChan             chan eventMsg
 	ackChan              chan eventAck
 	closeTimeoutDuration time.Duration
+	noAck                bool
 }
 
 type eventMsg struct {
@@ -64,6 +65,12 @@ func WithCloseTimeout(d time.Duration) HandlerOpts {
 	}
 }
 
+func WithNoAck() HandlerOpts {
+	return func(h *Handler) {
+		h.noAck = true
+	}
+}
+
 func NewHandler(client *redis.Client, codec qstream.DataCodec, group string, consumer string, opts ...HandlerOpts) *Handler {
 	h := &Handler{
 		client:               client,
@@ -72,7 +79,8 @@ func NewHandler(client *redis.Client, codec qstream.DataCodec, group string, con
 		consumerName:         consumer,
 		workerCount:          defaultWorkCount,
 		groupStartID:         defaultGroupStartID,
-		closeTimeoutDuration: 0, // 0 means never timeout
+		closeTimeoutDuration: 0,     // 0 means never timeout
+		noAck:                false, // enable ack by default
 	}
 
 	for _, o := range opts {
@@ -125,7 +133,7 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 	eventArray := make([]eventMsg, 0, h.workerCount*2)
 	doneChan = ctx.Done()
 
-	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.groupStartID, h.consumerName, false, events...)
+	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.groupStartID, h.consumerName, h.noAck, events...)
 	lastIDs := make([]string, len(events))
 	for i := 0; i < len(events); i++ {
 		lastIDs[i] = "0-0"
@@ -152,7 +160,9 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 		case transChan <- first:
 			eventArray = eventArray[1:]
 		case ack := <-h.ackChan:
-			sub.Ack(ack.Event, ack.EventID) // TODO: we may check error to handle ack later
+			if !h.noAck {
+				sub.Ack(ack.Event, ack.EventID) // TODO: we may check error to handle ack later
+			}
 		default:
 			if len(eventArray) > 0 {
 				time.Sleep(waitFreeWorkerInterval) // sleep if no free worker, TBU
@@ -170,7 +180,9 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 						if !ok {
 							return nil
 						}
-						sub.Ack(ack.Event, ack.EventID)
+						if !h.noAck {
+							sub.Ack(ack.Event, ack.EventID)
+						}
 					}
 				}
 			}
