@@ -60,7 +60,7 @@ func (s *HandlerTestSuite) TestHandleSimple() {
 	}, event)
 }
 
-func (s *HandlerTestSuite) TestHandleSimpleWithoutCloseTimeout() {
+func (s *HandlerTestSuite) TestHandleSimpleWithCloseTimeout() {
 	event := "qevent:test"
 	emitter := NewEmitter(s.redisClient)
 
@@ -76,7 +76,7 @@ func (s *HandlerTestSuite) TestHandleSimpleWithoutCloseTimeout() {
 	}
 	log.Infof(streamid)
 
-	handler := NewHandler(s.redisClient, qstream.JsonCodec(SimpleData{}), "testgroup", "testconsumer", WithCloseTimeout(2 * time.Second))
+	handler := NewHandler(s.redisClient, qstream.JsonCodec(SimpleData{}), "testgroup", "testconsumer", WithCloseTimeout(2*time.Second))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -88,12 +88,12 @@ func (s *HandlerTestSuite) TestHandleSimpleWithoutCloseTimeout() {
 	}, event)
 }
 
-func (s *HandlerTestSuite) TestHandleSimpleWithCloseTimeout() {
+func (s *HandlerTestSuite) TestHandleSimpleWithoutCloseTimeout() {
 	event := "qevent:test"
 	emitter := NewEmitter(s.redisClient)
 
 	d := &SimpleData{
-		ID:      456,
+		ID:      2,
 		Message: "emit event",
 	}
 

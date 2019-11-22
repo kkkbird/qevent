@@ -143,7 +143,9 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 		case <-doneChan:
 			doneChan = nil
 			if h.closeTimeoutDuration > 0 {
-				forceCloseCtx, _ = context.WithTimeout(forceCloseCtx, h.closeTimeoutDuration)
+				var cancel context.CancelFunc
+				forceCloseCtx, cancel = context.WithTimeout(forceCloseCtx, h.closeTimeoutDuration)
+				defer cancel()
 			}
 		case <-forceCloseCtx.Done():
 			return ErrCloseTimeout
@@ -171,8 +173,6 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 						sub.Ack(ack.Event, ack.EventID)
 					}
 				}
-
-				return nil
 			}
 
 			result, err := sub.Read(int64(h.workerCount), readEventBlockInterval, lastIDs...) // won't return redis.Nil if checkPending
