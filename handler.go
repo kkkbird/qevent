@@ -2,6 +2,7 @@ package qevent
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -14,18 +15,19 @@ var (
 	defaultGroupStartID    = "0-0"
 	waitFreeWorkerInterval = 10 * time.Millisecond
 	readEventBlockInterval = 10 * time.Millisecond
+	ErrCloseTimeout        = errors.New("Close timeout")
 )
 
 type Handler struct {
-	client       *redis.Client
-	codec        qstream.DataCodec
-	groupName    string
-	groupStartID string
-	consumerName string
-	workerCount  int
-	noAck        bool
-	dataChan     chan eventMsg
-	ackChan      chan eventAck
+	client               *redis.Client
+	codec                qstream.DataCodec
+	groupName            string
+	groupStartID         string
+	consumerName         string
+	workerCount          int
+	dataChan             chan eventMsg
+	ackChan              chan eventAck
+	closeTimeoutDuration time.Duration
 }
 
 type eventMsg struct {
@@ -56,21 +58,21 @@ func WithGroupStartID(startID string) HandlerOpts {
 	}
 }
 
-func WithAck() HandlerOpts {
+func WithCloseTimeout(d time.Duration) HandlerOpts {
 	return func(h *Handler) {
-		h.noAck = false
+		h.closeTimeoutDuration = d
 	}
 }
 
 func NewHandler(client *redis.Client, codec qstream.DataCodec, group string, consumer string, opts ...HandlerOpts) *Handler {
 	h := &Handler{
-		client:       client,
-		codec:        codec,
-		groupName:    group,
-		consumerName: consumer,
-		workerCount:  defaultWorkCount,
-		groupStartID: defaultGroupStartID,
-		noAck:        true, //no ack by default, use WithAck() to enable ack
+		client:               client,
+		codec:                codec,
+		groupName:            group,
+		consumerName:         consumer,
+		workerCount:          defaultWorkCount,
+		groupStartID:         defaultGroupStartID,
+		closeTimeoutDuration: 0, // 0 means never timeout
 	}
 
 	for _, o := range opts {
@@ -78,92 +80,74 @@ func NewHandler(client *redis.Client, codec qstream.DataCodec, group string, con
 	}
 
 	h.dataChan = make(chan eventMsg, h.workerCount) // workerCount may be changed in opts
-
-	if !h.noAck {
-		h.ackChan = make(chan eventAck, h.workerCount)
-	}
+	h.ackChan = make(chan eventAck, h.workerCount)
 
 	return h
 }
 
 func (h *Handler) Run(ctx context.Context, dataHandler DataHandler, events ...string) error {
-	// run reader
-	readerCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	readerExitChan := make(chan error, 1)
-
-	go func() {
-		readerExitChan <- h.reader(readerCtx, events...)
-	}()
-
 	// run handler
-	workerCtx := context.Background() //worker do not use context, but where reader close data chan
-	var wg sync.WaitGroup
+	go func() {
+		var wg sync.WaitGroup
+		wg.Add(h.workerCount)
 
-	wg.Add(h.workerCount)
-	for i := 0; i < h.workerCount; i++ {
-		go func() {
-			defer wg.Done()
-			h.handle(workerCtx, dataHandler)
-		}()
-	}
+		for i := 0; i < h.workerCount; i++ {
+			go func() {
+				defer wg.Done()
 
-	select {
-	case <-ctx.Done():
-		wg.Wait() // wait all worker exit
+				for dd := range h.dataChan {
+					err := dataHandler(dd.Event, dd.EventID, dd.Data)
 
-		if !h.noAck { // close ack chan to make reader exit
-			close(h.ackChan)
+					h.ackChan <- eventAck{
+						Event:   dd.Event,
+						EventID: dd.EventID,
+						Err:     err,
+					}
+				}
+			}()
 		}
-		<-readerExitChan // wait reader exit
-	}
 
-	return nil
+		wg.Wait() // wait all worker exit
+		close(h.ackChan)
+	}()
+	// run reader
+	return h.reader(ctx, events...)
 }
 
 func (h *Handler) reader(ctx context.Context, events ...string) error {
 	var (
-		first    eventMsg
-		tranChan chan eventMsg
-		result   map[string][]qstream.StreamSubResult
-		err      error
-		lastIDs  []string
+		first     eventMsg
+		transChan chan eventMsg
+		doneChan  <-chan struct{}
 	)
-	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.groupStartID, h.consumerName, h.noAck, events...)
 
-	checkPending := !h.noAck
-	if checkPending {
-		lastIDs = make([]string, len(events))
-		for i := 0; i < len(events); i++ {
-			lastIDs[i] = "0-0"
-		}
-	}
-
+	forceCloseCtx := context.Background()
 	eventArray := make([]eventMsg, 0, h.workerCount*2)
+	doneChan = ctx.Done()
+
+	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.groupStartID, h.consumerName, false, events...)
+	lastIDs := make([]string, len(events))
+	for i := 0; i < len(events); i++ {
+		lastIDs[i] = "0-0"
+	}
 
 	for {
 		if len(eventArray) > 0 {
 			first = eventArray[0]
-			tranChan = h.dataChan
+			transChan = h.dataChan
 		} else {
-			tranChan = nil
+			transChan = nil
 		}
 
 		select {
-		case <-ctx.Done():
-			// TODO: complete all remain data, may add time.After here
-			for _, d := range eventArray {
-				h.dataChan <- d
+		case <-doneChan:
+			doneChan = nil
+			if h.closeTimeoutDuration > 0 {
+				forceCloseCtx, _ = context.WithTimeout(forceCloseCtx, h.closeTimeoutDuration)
 			}
-			close(h.dataChan) // close dataChan to make worker exit
-			if !h.noAck {
-				for ack := range h.ackChan {
-					sub.Ack(ack.Event, ack.EventID)
-				}
-			}
-			return nil
-		case tranChan <- first:
+		case <-forceCloseCtx.Done():
+			return ErrCloseTimeout
+		case transChan <- first:
 			eventArray = eventArray[1:]
 		case ack := <-h.ackChan:
 			sub.Ack(ack.Event, ack.EventID) // TODO: we may check error to handle ack later
@@ -173,13 +157,28 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 				continue
 			}
 
-			if checkPending {
-				result, err = sub.Read(int64(h.workerCount), 0, lastIDs...) // won't return redis.Nil if checkPending
-			} else {
-				result, err = sub.Read(int64(h.workerCount), readEventBlockInterval)
-				if err == redis.Nil {
-					continue
+			if doneChan == nil { // no event in list and Done
+				close(h.dataChan) // close dataChan to make worker exit
+
+				for {
+					select {
+					case <-forceCloseCtx.Done():
+						return ErrCloseTimeout
+					case ack, ok := <-h.ackChan:
+						if !ok {
+							return nil
+						}
+						sub.Ack(ack.Event, ack.EventID)
+					}
 				}
+
+				return nil
+			}
+
+			result, err := sub.Read(int64(h.workerCount), readEventBlockInterval, lastIDs...) // won't return redis.Nil if checkPending
+
+			if err == redis.Nil {
+				continue
 			}
 
 			if err != nil {
@@ -187,60 +186,21 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 				continue
 			}
 
-			if checkPending { // if all value has read and update lastID
-				hasData := false
-				for k, v := range result {
-					if len(v) > 0 {
-						hasData = true
-						lastIDs[sub.GetKeyIndex(k)] = v[len(v)-1].StreamID
+			for k, v := range result {
+				idx := sub.GetKeyIndex(k)
+				if len(v) == 0 {
+					lastIDs[idx] = ">"
+				} else {
+					for _, d := range v {
+						eventArray = append(eventArray, eventMsg{
+							Event:   k,
+							EventID: d.StreamID,
+							Data:    d.Data,
+						})
+						lastIDs[idx] = d.StreamID
 					}
 				}
-
-				if !hasData {
-					checkPending = false
-				}
-			}
-
-			for k, v := range result {
-				for _, d := range v {
-					eventArray = append(eventArray, eventMsg{
-						Event:   k,
-						EventID: d.StreamID,
-						Data:    d.Data,
-					})
-				}
 			}
 		}
 	}
-	return nil
-}
-
-func (h *Handler) handle(ctx context.Context, dataHandler DataHandler) error {
-	var (
-		dd  eventMsg
-		ok  bool
-		err error
-	)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case dd, ok = <-h.dataChan:
-			if !ok {
-				return nil //stop data handler by chan closed
-			}
-			err = dataHandler(dd.Event, dd.EventID, dd.Data)
-
-			if !h.noAck {
-				h.ackChan <- eventAck{
-					Event:   dd.Event,
-					EventID: dd.EventID,
-					Err:     err,
-				}
-			}
-		}
-	}
-
-	return nil
 }

@@ -37,7 +37,7 @@ func (s *HandlerTestSuite) TestHandleSimple() {
 	emitter := NewEmitter(s.redisClient)
 
 	d := &SimpleData{
-		ID:      4567,
+		ID:      456,
 		Message: "emit event",
 	}
 
@@ -54,18 +54,19 @@ func (s *HandlerTestSuite) TestHandleSimple() {
 	defer cancel()
 	handler.Run(ctx, func(event string, eventId string, data interface{}) error {
 		log.Infof("recv event=%s,id=%s,data=%#v", event, eventId, data)
-		cancel()
+		time.Sleep(time.Second * 3)
+		log.Infof("recv event=%s,id=%s done", event, eventId)
 		return nil
 	}, event)
 }
 
-func (s *HandlerTestSuite) TestHandleSimpleWithAck() {
-	event := "qevent:testack"
+func (s *HandlerTestSuite) TestHandleSimpleWithoutCloseTimeout() {
+	event := "qevent:test"
 	emitter := NewEmitter(s.redisClient)
 
 	d := &SimpleData{
-		ID:      4567,
-		Message: "emit event with ack",
+		ID:      456,
+		Message: "emit event",
 	}
 
 	streamid, err := emitter.Emit(event, d)
@@ -75,21 +76,44 @@ func (s *HandlerTestSuite) TestHandleSimpleWithAck() {
 	}
 	log.Infof(streamid)
 
-	handler := NewHandler(s.redisClient, qstream.JsonCodec(SimpleData{}), "testgroup", "testconsumer", WithAck())
+	handler := NewHandler(s.redisClient, qstream.JsonCodec(SimpleData{}), "testgroup", "testconsumer", WithCloseTimeout(2 * time.Second))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	handler.Run(ctx, func(event string, eventId string, data interface{}) error {
 		log.Infof("recv event=%s,id=%s,data=%#v", event, eventId, data)
+		time.Sleep(time.Second * 10)
+		log.Infof("recv event=%s,id=%s done", event, eventId)
 		return nil
 	}, event)
+}
 
-	go func() {
+func (s *HandlerTestSuite) TestHandleSimpleWithCloseTimeout() {
+	event := "qevent:test"
+	emitter := NewEmitter(s.redisClient)
+
+	d := &SimpleData{
+		ID:      456,
+		Message: "emit event",
+	}
+
+	streamid, err := emitter.Emit(event, d)
+
+	if !s.NoError(err) {
+		return
+	}
+	log.Infof(streamid)
+
+	handler := NewHandler(s.redisClient, qstream.JsonCodec(SimpleData{}), "testgroup", "testconsumer")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	handler.Run(ctx, func(event string, eventId string, data interface{}) error {
+		log.Infof("recv event=%s,id=%s,data=%#v", event, eventId, data)
 		time.Sleep(time.Second * 10)
-		cancel()
-	}()
-
-	<-ctx.Done()
+		log.Infof("recv event=%s,id=%s done", event, eventId)
+		return nil
+	}, event)
 }
 
 func TestHandler(t *testing.T) {
