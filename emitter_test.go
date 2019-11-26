@@ -6,13 +6,8 @@ import (
 	"github.com/kkkbird/qstream"
 
 	"github.com/go-redis/redis"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
-)
-
-var (
-	log = logrus.WithField("pkg", "qevent")
 )
 
 type SimpleData struct {

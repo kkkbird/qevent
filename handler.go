@@ -3,16 +3,25 @@ package qevent
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"time"
 
+	"strings"
+
 	"github.com/go-redis/redis"
 	"github.com/kkkbird/qstream"
+	"github.com/sirupsen/logrus"
+)
+
+var (
+	log = logrus.WithField("pkg", "qevent")
 )
 
 var (
 	defaultWorkCount       = 5
 	defaultGroupStartID    = "0-0"
+	maxEventClaimCount     = 10
 	waitFreeWorkerInterval = 10 * time.Millisecond
 	readEventBlockInterval = 10 * time.Millisecond
 	ErrCloseTimeout        = errors.New("Close timeout")
@@ -21,6 +30,7 @@ var (
 type Handler struct {
 	client               *redis.Client
 	codec                qstream.DataCodec
+	events               []string
 	groupName            string
 	groupStartID         string
 	consumerName         string
@@ -29,6 +39,7 @@ type Handler struct {
 	ackChan              chan eventAck
 	closeTimeoutDuration time.Duration
 	noAck                bool
+	checkPendingDuration time.Duration // == 0 means do not check pending
 }
 
 type eventMsg struct {
@@ -71,6 +82,12 @@ func WithNoAck() HandlerOpts {
 	}
 }
 
+func WithCheckPending(d time.Duration) HandlerOpts {
+	return func(h *Handler) {
+		h.checkPendingDuration = d
+	}
+}
+
 func NewHandler(client *redis.Client, codec qstream.DataCodec, group string, consumer string, opts ...HandlerOpts) *Handler {
 	h := &Handler{
 		client:               client,
@@ -87,13 +104,14 @@ func NewHandler(client *redis.Client, codec qstream.DataCodec, group string, con
 		o(h)
 	}
 
-	h.dataChan = make(chan eventMsg, h.workerCount) // workerCount may be changed in opts
+	h.dataChan = make(chan eventMsg) // workerCount may be changed in opts
 	h.ackChan = make(chan eventAck, h.workerCount)
 
 	return h
 }
 
 func (h *Handler) Run(ctx context.Context, dataHandler DataHandler, events ...string) error {
+	h.events = events
 	// run handler
 	go func() {
 		var wg sync.WaitGroup
@@ -119,24 +137,127 @@ func (h *Handler) Run(ctx context.Context, dataHandler DataHandler, events ...st
 		close(h.ackChan)
 	}()
 	// run reader
-	return h.reader(ctx, events...)
+	return h.reader(ctx)
 }
 
-func (h *Handler) reader(ctx context.Context, events ...string) error {
+func deltaStreamId(streamID string, deltaFirst int64, deltaSecond int64) string {
+	msgId := strings.Split(streamID, "-")
+
+	oFirst, _ := strconv.ParseInt(msgId[0], 10, 64)
+	oSecond, _ := strconv.ParseInt(msgId[1], 10, 64)
+
+	return strconv.FormatInt(oFirst+deltaFirst, 10) + "-" + strconv.FormatInt(oSecond+deltaSecond, 10)
+}
+
+func nowStreamId() string {
+	return strconv.FormatInt(int64(time.Now().UnixNano()/int64(time.Millisecond)), 10) + "-0"
+}
+
+func (h *Handler) checkPending(lastPendingIDs []string) (map[string][]qstream.StreamSubResult, error) {
+	claimIds := make([]string, 0)
+	var (
+		startId string
+		endId   string
+	)
+
+	for i, evt := range h.events {
+		if lastPendingIDs[i] != "-" {
+			startId = deltaStreamId(lastPendingIDs[i], 0, 1)
+		} else {
+			startId = "-"
+		}
+		endId = deltaStreamId(nowStreamId(), -int64(h.checkPendingDuration/time.Millisecond), 0)
+
+		pending, err := h.client.XPendingExt(&redis.XPendingExtArgs{
+			Stream: evt,
+			Group:  h.groupName,
+			Start:  startId,
+			End:    endId,
+			Count:  int64(h.workerCount),
+		}).Result()
+
+		if err != nil {
+			return nil, err
+		}
+
+		if len(pending) == 0 {
+			continue
+		}
+
+		for _, p := range pending {
+			if p.Idle > h.checkPendingDuration { // normally, we donot need to check the duration again here
+				if p.RetryCount >= int64(maxEventClaimCount) {
+					// TODO: too many retry, should handle error, now do nothing
+				}
+
+				if p.Consumer == h.consumerName {
+					// TODO: already owned by current consumer !! should handle error
+					continue
+				}
+
+				claimIds = append(claimIds, p.Id)
+			}
+		}
+
+		if len(claimIds) > 0 {
+			lastPendingIDs[i] = claimIds[len(claimIds)-1]
+
+			rlt, err := h.client.XClaim(&redis.XClaimArgs{
+				Stream:   evt,
+				Group:    h.groupName,
+				Consumer: h.consumerName,
+				MinIdle:  h.checkPendingDuration,
+				Messages: claimIds,
+			}).Result()
+
+			if err != nil {
+				return nil, err
+			}
+
+			claimedMsg := make(map[string][]qstream.StreamSubResult)
+
+			if len(rlt) > 0 { // len(rlt) may == 0 because other consume may claim these pending message, will return an empty map
+				subRlt, err := qstream.XMessage2Data(rlt, h.codec)
+
+				if err != nil {
+					return nil, err
+				}
+
+				claimedMsg[evt] = subRlt
+			}
+
+			return claimedMsg, nil
+		}
+	}
+
+	return nil, redis.Nil
+}
+
+func (h *Handler) reader(ctx context.Context) error {
 	var (
 		first     eventMsg
 		transChan chan eventMsg
 		doneChan  <-chan struct{}
+		nowTs     int64
+		err       error
+		result    map[string][]qstream.StreamSubResult
 	)
 
 	forceCloseCtx := context.Background()
 	eventArray := make([]eventMsg, 0, h.workerCount*2)
 	doneChan = ctx.Done()
 
-	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.groupStartID, h.consumerName, h.noAck, events...)
-	lastIDs := make([]string, len(events))
-	for i := 0; i < len(events); i++ {
+	sub := qstream.NewRedisStreamGroupSub(h.client, h.codec, h.groupName, h.groupStartID, h.consumerName, h.noAck, h.events...)
+	lastIDs := make([]string, len(h.events))
+	for i := 0; i < len(h.events); i++ {
 		lastIDs[i] = "0-0"
+	}
+
+	lastCheckPendingTs := time.Now().UnixNano() // set to now because we do not want check pending at start
+	lastPendingIDs := make([]string, len(h.events))
+
+	for i := 0; i < len(h.events); i++ {
+		lastPendingIDs[i] = "-"
 	}
 
 	for {
@@ -187,10 +308,23 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 				}
 			}
 
-			result, err := sub.Read(int64(h.workerCount), readEventBlockInterval, lastIDs...) // won't return redis.Nil if checkPending
+			nowTs = time.Now().UnixNano()
 
-			if err == redis.Nil {
-				continue
+			if h.checkPendingDuration > 0 && nowTs-lastCheckPendingTs > int64(h.checkPendingDuration) {
+				result, err = h.checkPending(lastPendingIDs)
+
+				if err == redis.Nil { // only update lastCheckPendingTs when no pending, otherwise we should check pending in next round
+					for i := 0; i < len(h.events); i++ {
+						lastPendingIDs[i] = "-"
+					}
+					lastCheckPendingTs = nowTs
+				}
+			} else {
+				result, err = sub.Read(int64(h.workerCount), readEventBlockInterval, lastIDs...) // won't return redis.Nil if checkPending
+
+				if err == redis.Nil {
+					continue
+				}
 			}
 
 			if err != nil {
@@ -209,7 +343,9 @@ func (h *Handler) reader(ctx context.Context, events ...string) error {
 							EventID: d.StreamID,
 							Data:    d.Data,
 						})
-						lastIDs[idx] = d.StreamID
+					}
+					if lastIDs[idx] != ">" {
+						lastIDs[idx] = v[len(v)-1].StreamID
 					}
 				}
 			}
