@@ -154,10 +154,10 @@ func nowStreamId() string {
 }
 
 func (h *Handler) checkPending(lastPendingIDs []string) (map[string][]qstream.StreamSubResult, error) {
-	claimIds := make([]string, 0)
 	var (
-		startId string
-		endId   string
+		startId  string
+		endId    string
+		claimIds = make([]string, 0)
 	)
 
 	for i, evt := range h.events {
@@ -200,18 +200,47 @@ func (h *Handler) checkPending(lastPendingIDs []string) (map[string][]qstream.St
 		}
 
 		if len(claimIds) > 0 {
-			lastPendingIDs[i] = claimIds[len(claimIds)-1]
+			var (
+				rlt []redis.XMessage
+				err error
+			)
 
-			rlt, err := h.client.XClaim(&redis.XClaimArgs{
-				Stream:   evt,
-				Group:    h.groupName,
-				Consumer: h.consumerName,
-				MinIdle:  h.checkPendingDuration,
-				Messages: claimIds,
-			}).Result()
+			//TODO: change back after this bug fixed: https://github.com/go-redis/redis/issues/1202
+			if false {
+				lastPendingIDs[i] = claimIds[len(claimIds)-1]
 
-			if err != nil {
-				return nil, err
+				rlt, err = h.client.XClaim(&redis.XClaimArgs{
+					Stream:   evt,
+					Group:    h.groupName,
+					Consumer: h.consumerName,
+					MinIdle:  h.checkPendingDuration,
+					Messages: claimIds,
+				}).Result()
+
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				// handle claimId one by one
+				rlt = make([]redis.XMessage, 0)
+				for _, cid := range claimIds {
+					lastPendingIDs[i] = cid
+					rltTmp, err := h.client.XClaim(&redis.XClaimArgs{
+						Stream:   evt,
+						Group:    h.groupName,
+						Consumer: h.consumerName,
+						MinIdle:  h.checkPendingDuration,
+						Messages: []string{cid},
+					}).Result()
+
+					if err == redis.Nil {
+						h.client.XAck(evt, h.groupName, cid) // TODO: message has been trimmed, ack directly now, may add code to notify handler some messages are trimmed
+					} else if err != nil {
+						return nil, err
+					} else {
+						rlt = append(rlt, rltTmp...)
+					}
+				}
 			}
 
 			claimedMsg := make(map[string][]qstream.StreamSubResult)
