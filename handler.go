@@ -9,7 +9,7 @@ import (
 
 	"strings"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v7"
 	"github.com/kkkbird/qstream"
 	"github.com/sirupsen/logrus"
 )
@@ -195,7 +195,7 @@ func (h *Handler) checkPending(lastPendingIDs []string) (map[string][]qstream.St
 					continue
 				}
 
-				claimIds = append(claimIds, p.Id)
+				claimIds = append(claimIds, p.ID)
 			}
 		}
 

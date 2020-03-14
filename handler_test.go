@@ -7,7 +7,7 @@ import (
 
 	"github.com/kkkbird/qstream"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v7"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
@@ -437,7 +437,7 @@ func (s *HandlerTestSuite) TestHandleBugXClaim() {
 
 	claimIds := make([]string, 0)
 	for _, p := range pending {
-		claimIds = append(claimIds, p.Id)
+		claimIds = append(claimIds, p.ID)
 	}
 
 	// bob claim messages, on redis-cli, the result will be:

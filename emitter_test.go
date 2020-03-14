@@ -5,7 +5,7 @@ import (
 
 	"github.com/kkkbird/qstream"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v7"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
@@ -62,7 +62,7 @@ func (s *EmitterTestSuite) TestEmitSimple() {
 
 func (s *EmitterTestSuite) TestEmitWithCodec() {
 	event := "qevent:test"
-	emitter := NewEmitter(s.redisClient, WithCodec(qstream.StructCodec(SimpleData{})))
+	emitter := NewEmitter(s.redisClient, WithCodec(qstream.JsonCodec(SimpleData{})))
 
 	d := &SimpleData{
 		ID:      4567,

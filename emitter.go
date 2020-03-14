@@ -3,7 +3,7 @@ package qevent
 import (
 	"sync"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v7"
 	"github.com/kkkbird/qstream"
 )
 
