@@ -25,6 +25,7 @@ var (
 	waitFreeWorkerInterval = 10 * time.Millisecond
 	readEventBlockInterval = 10 * time.Millisecond
 	ErrCloseTimeout        = errors.New("Close timeout")
+	ErrMessageTrimmed      = errors.New("data trimmed")
 )
 
 type Handler struct {
@@ -39,6 +40,7 @@ type Handler struct {
 	ackChan              chan eventAck
 	closeTimeoutDuration time.Duration
 	noAck                bool
+	ignoreTrimmedData    bool
 	checkPendingDuration time.Duration // == 0 means do not check pending
 }
 
@@ -88,6 +90,12 @@ func WithCheckPending(d time.Duration) HandlerOpts {
 	}
 }
 
+func WithIgnoreTrimmedData() HandlerOpts {
+	return func(h *Handler) {
+		h.ignoreTrimmedData = true
+	}
+}
+
 func NewHandler(client *redis.Client, codec qstream.DataCodec, group string, consumer string, opts ...HandlerOpts) *Handler {
 	h := &Handler{
 		client:               client,
@@ -121,8 +129,12 @@ func (h *Handler) Run(ctx context.Context, dataHandler DataHandler, events ...st
 			go func() {
 				defer wg.Done()
 
+				var err error
+
 				for dd := range h.dataChan {
-					err := dataHandler(dd.Event, dd.EventID, dd.Data)
+					if dd.Data != nil || !h.ignoreTrimmedData {
+						err = dataHandler(dd.Event, dd.EventID, dd.Data)
+					}
 
 					h.ackChan <- eventAck{
 						Event:   dd.Event,
@@ -205,7 +217,8 @@ func (h *Handler) checkPending(lastPendingIDs []string) (map[string][]qstream.St
 				err error
 			)
 
-			//TODO: change back after this bug fixed: https://github.com/go-redis/redis/issues/1202
+			// TODO: change back after this bug fixed: https://github.com/go-redis/redis/issues/1202
+			// 2020/3/14, bug still remain on v7.2.0, but pool.go will remove bad connection and following call will be ok
 			if false {
 				lastPendingIDs[i] = claimIds[len(claimIds)-1]
 
@@ -245,7 +258,7 @@ func (h *Handler) checkPending(lastPendingIDs []string) (map[string][]qstream.St
 
 			claimedMsg := make(map[string][]qstream.StreamSubResult)
 
-			if len(rlt) > 0 { // len(rlt) may == 0 because other consume may claim these pending message, will return an empty map
+			if len(rlt) > 0 { // len(rlt) may == 0 because other consumer may claim these pending message, will return an empty map
 				subRlt, err := qstream.XMessage2Data(rlt, h.codec)
 
 				if err != nil {
