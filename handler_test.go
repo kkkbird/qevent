@@ -105,11 +105,11 @@ func (s *HandlerTestSuite) runHandler(ctx context.Context, event, group, consume
 	exitChan := make(chan error, 1)
 
 	go func() {
-		exitChan <- handler.Run(ctx, func(event string, eventId string, data interface{}) error {
-			d := data.(*SimpleData)
-			log.Infof("%s start %d, event=%s,id=%s,data=%#v", consume, d.ID, event, eventId, data)
+		exitChan <- handler.Run(ctx, func(msg EventMsg) error {
+			d := msg.Data.(*SimpleData)
+			log.Infof("%s start %d, event=%s,id=%s,data=%#v", consume, d.ID, msg.Event, msg.EventID, msg.Data)
 			time.Sleep(duration)
-			log.Infof("%s done %d, event=%s,id=%s done", consume, d.ID, event, eventId)
+			log.Infof("%s done %d, event=%s,id=%s done", consume, d.ID, msg.Event, msg.EventID)
 			handleChan <- 1
 			return nil
 		}, event)
@@ -301,10 +301,10 @@ func (s *HandlerTestSuite) TestHandleSimpleWithoutCloseTimeout() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-	handler.Run(ctx, func(event string, eventId string, data interface{}) error {
-		log.Infof("recv event=%s,id=%s,data=%#v", event, eventId, data)
+	handler.Run(ctx, func(msg EventMsg) error {
+		log.Infof("recv event=%s,id=%s,data=%#v", msg.Event, msg.EventID, msg.Data)
 		time.Sleep(time.Second * 10)
-		log.Infof("recv event=%s,id=%s done", event, eventId)
+		log.Infof("recv event=%s,id=%s done", msg.Event, msg.EventID)
 		return nil
 	}, event)
 }
