@@ -23,7 +23,6 @@ var (
 	maxEventClaimCount     = 10
 	readEventBlockInterval = 100 * time.Millisecond
 	ErrCloseTimeout        = errors.New("Close timeout")
-	ErrMessageTrimmed      = errors.New("data trimmed")
 )
 
 type Handler struct {
@@ -44,7 +43,10 @@ type eventMsg struct {
 	Event   string
 	EventID string
 	Data    interface{}
+	Err     error
 }
+
+type EventMsg eventMsg
 
 type eventAck struct {
 	Event   string
@@ -52,7 +54,7 @@ type eventAck struct {
 	Err     error
 }
 
-type DataHandler func(event string, eventId string, data interface{}) error
+type DataHandler func(msg EventMsg) error
 
 type HandlerOpts func(e *Handler)
 
@@ -128,10 +130,10 @@ func (h *Handler) runWorkers(ctx context.Context, dataHandler DataHandler, dataC
 				//doneChan := ctx.Done()
 
 				for dd := range dataChan {
-					if dd.Data != nil || !h.ignoreTrimmedData {
-						err = dataHandler(dd.Event, dd.EventID, dd.Data)
+					if dd.Err == qstream.ErrMessageTrimmed && h.ignoreTrimmedData {
+						err = dd.Err
 					} else {
-						err = ErrMessageTrimmed
+						err = dataHandler(EventMsg(dd))
 					}
 
 					ackChan <- eventAck{
@@ -354,6 +356,7 @@ func (h *Handler) runStreamReader(ctx context.Context) (*qstream.RedisStreamGrou
 								Event:   k,
 								EventID: d.StreamID,
 								Data:    d.Data,
+								Err:     d.Err,
 							})
 						}
 						if lastIDs[idx] != ">" {
