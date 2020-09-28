@@ -7,7 +7,7 @@ import (
 
 	"github.com/kkkbird/qstream"
 
-	"github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v8"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
@@ -33,16 +33,17 @@ func (s *HandlerTestSuite) TearDownSuite() {
 }
 
 func (s *HandlerTestSuite) TearDownTest() {
-	s.redisClient.Del("qevent:test")
+	s.redisClient.Del(context.Background(), "qevent:test")
 }
 
 func (s *HandlerTestSuite) SetupTest() {
-	s.redisClient.Del("qevent:test")
+	s.redisClient.Del(context.Background(), "qevent:test")
 }
 
 func (s *HandlerTestSuite) emitSimpleMsgs(event string, count int) (map[int]string, error) {
 	emitter := NewEmitter(s.redisClient)
 	msgIDs := make(map[int]string)
+	ctx := context.Background()
 
 	for i := 0; i < count; i++ {
 		d := &SimpleData{
@@ -50,7 +51,7 @@ func (s *HandlerTestSuite) emitSimpleMsgs(event string, count int) (map[int]stri
 			Message: "emit event",
 		}
 
-		streamID, err := emitter.Emit(event, d)
+		streamID, err := emitter.Emit(ctx, event, d)
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +61,8 @@ func (s *HandlerTestSuite) emitSimpleMsgs(event string, count int) (map[int]stri
 }
 
 func (s *HandlerTestSuite) getPendingAndReading(event string, group string, consumer string) (int, int, error) {
-	rlt, err := s.redisClient.XReadGroup(&redis.XReadGroupArgs{
+	ctx := context.Background()
+	rlt, err := s.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    group,
 		Consumer: consumer,
 		Streams:  []string{event, "0-0"},
@@ -77,7 +79,7 @@ func (s *HandlerTestSuite) getPendingAndReading(event string, group string, cons
 
 	pending := len(rlt[0].Messages)
 
-	rlt, err = s.redisClient.XReadGroup(&redis.XReadGroupArgs{
+	rlt, err = s.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    group,
 		Consumer: consumer,
 		Streams:  []string{event, ">"},
@@ -284,13 +286,14 @@ func (s *HandlerTestSuite) TestHandleSimpleWithCloseTimeout() {
 func (s *HandlerTestSuite) TestHandleSimpleWithoutCloseTimeout() {
 	event := "qevent:test"
 	emitter := NewEmitter(s.redisClient)
+	ctx := context.Background()
 
 	d := &SimpleData{
 		ID:      2,
 		Message: "emit event",
 	}
 
-	streamid, err := emitter.Emit(event, d)
+	streamid, err := emitter.Emit(ctx, event, d)
 
 	if !s.NoError(err) {
 		return
@@ -373,26 +376,27 @@ func (s *HandlerTestSuite) TestHandleSimpleWithCheckPending() {
 
 func (s *HandlerTestSuite) TestHandleBugXClaim() {
 	client := s.redisClient
+	ctx := context.Background()
 
 	var maxLen int64 = 2
 
-	client.Del("mystream")
-	client.XGroupCreateMkStream("mystream", "mygroup", "$")
+	client.Del(ctx, "mystream")
+	client.XGroupCreateMkStream(ctx, "mystream", "mygroup", "$")
 
 	// add 2 entries
-	client.XAdd(&redis.XAddArgs{
+	client.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mystream",
 		MaxLen: maxLen,
 		Values: map[string]interface{}{"value": 1},
 	})
-	client.XAdd(&redis.XAddArgs{
+	client.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mystream",
 		MaxLen: maxLen,
 		Values: map[string]interface{}{"value": 2},
 	})
 
 	// read by alice
-	client.XReadGroup(&redis.XReadGroupArgs{
+	client.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    "mygroup",
 		Consumer: "alice",
 		Streams:  []string{"mystream", ">"},
@@ -402,19 +406,19 @@ func (s *HandlerTestSuite) TestHandleBugXClaim() {
 	})
 
 	// add 2 more entries
-	client.XAdd(&redis.XAddArgs{
+	client.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mystream",
 		MaxLen: maxLen,
 		Values: map[string]interface{}{"value": 3},
 	})
-	client.XAdd(&redis.XAddArgs{
+	client.XAdd(ctx, &redis.XAddArgs{
 		Stream: "mystream",
 		MaxLen: maxLen,
 		Values: map[string]interface{}{"value": 4},
 	})
 
 	// read by alice again, now alice has 4 pending messages, and 2 messages were trimed
-	client.XReadGroup(&redis.XReadGroupArgs{
+	client.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    "mygroup",
 		Consumer: "alice",
 		Streams:  []string{"mystream", ">"},
@@ -427,7 +431,7 @@ func (s *HandlerTestSuite) TestHandleBugXClaim() {
 	time.Sleep(3 * time.Second)
 
 	// get all pending messages
-	pending, _ := client.XPendingExt(&redis.XPendingExtArgs{
+	pending, _ := client.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: "mystream",
 		Group:  "mygroup",
 		Start:  "-",
@@ -449,7 +453,7 @@ func (s *HandlerTestSuite) TestHandleBugXClaim() {
 	// 4) 1) "1575371014539-0"
 	//    2) 1) "value"
 	// 	  2) "4"
-	rlt, err := client.XClaim(&redis.XClaimArgs{
+	rlt, err := client.XClaim(ctx, &redis.XClaimArgs{
 		Stream:   "mystream",
 		Group:    "mygroup",
 		Consumer: "bob",
@@ -461,7 +465,7 @@ func (s *HandlerTestSuite) TestHandleBugXClaim() {
 	log.Info(rlt, " ", err)
 
 	for i := 0; i < 4; i++ {
-		len, err := client.XLen("mystream").Result() // redis call will fail serval times
+		len, err := client.XLen(ctx, "mystream").Result() // redis call will fail serval times
 		log.Info(i, " ", len, " ", err)
 	}
 }

@@ -1,11 +1,12 @@
 package qevent
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kkkbird/qstream"
 
-	"github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v8"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
@@ -38,12 +39,14 @@ func (s *EmitterTestSuite) SetupSuite() {
 }
 
 func (s *EmitterTestSuite) TearDownSuite() {
-	s.redisClient.Del("qevent:test")
-	s.redisClient.Del("qevent:test2")
+	ctx := context.Background()
+	s.redisClient.Del(ctx, "qevent:test")
+	s.redisClient.Del(ctx, "qevent:test2")
 	s.redisClient.Close()
 }
 
 func (s *EmitterTestSuite) TestEmitSimple() {
+	ctx := context.Background()
 	event := "qevent:test"
 	emitter := NewEmitter(s.redisClient)
 
@@ -52,7 +55,7 @@ func (s *EmitterTestSuite) TestEmitSimple() {
 		Message: "emit event",
 	}
 
-	streamid, err := emitter.Emit(event, d)
+	streamid, err := emitter.Emit(ctx, event, d)
 
 	if !s.NoError(err) {
 		return
@@ -61,6 +64,7 @@ func (s *EmitterTestSuite) TestEmitSimple() {
 }
 
 func (s *EmitterTestSuite) TestEmitWithCodec() {
+	ctx := context.Background()
 	event := "qevent:test"
 	emitter := NewEmitter(s.redisClient, WithCodec(qstream.JsonCodec(SimpleData{})))
 
@@ -69,7 +73,7 @@ func (s *EmitterTestSuite) TestEmitWithCodec() {
 		Message: "emit event",
 	}
 
-	streamid, err := emitter.Emit(event, d)
+	streamid, err := emitter.Emit(ctx, event, d)
 
 	if !s.NoError(err) {
 		return
@@ -78,6 +82,8 @@ func (s *EmitterTestSuite) TestEmitWithCodec() {
 }
 
 func (s *EmitterTestSuite) TestEmitMultiEvent() {
+	ctx := context.Background()
+
 	event1 := "qevent:test"
 	event2 := "qevent:test2"
 	emitter := NewEmitter(s.redisClient)
@@ -87,7 +93,7 @@ func (s *EmitterTestSuite) TestEmitMultiEvent() {
 		Message: "emit event",
 	}
 
-	streamid, err := emitter.Emit(event1, d)
+	streamid, err := emitter.Emit(ctx, event1, d)
 	if !s.NoError(err) {
 		return
 	}
@@ -97,7 +103,7 @@ func (s *EmitterTestSuite) TestEmitMultiEvent() {
 		Gendor:  1,
 		Enabled: true,
 	}
-	streamid, err = emitter.Emit(event2, d2)
+	streamid, err = emitter.Emit(ctx, event2, d2)
 	if !s.NoError(err) {
 		return
 	}
@@ -105,6 +111,7 @@ func (s *EmitterTestSuite) TestEmitMultiEvent() {
 }
 
 func (s *EmitterTestSuite) TestEmitWithCodecFunc() {
+	ctx := context.Background()
 
 	event1 := "qevent:test"
 	event2 := "qevent:test2"
@@ -123,7 +130,7 @@ func (s *EmitterTestSuite) TestEmitWithCodecFunc() {
 		Message: "emit event",
 	}
 
-	streamid, err := emitter.Emit(event1, d)
+	streamid, err := emitter.Emit(ctx, event1, d)
 	if !s.NoError(err) {
 		return
 	}
@@ -133,7 +140,7 @@ func (s *EmitterTestSuite) TestEmitWithCodecFunc() {
 		Gendor:  1,
 		Enabled: true,
 	}
-	streamid, err = emitter.Emit(event2, d2)
+	streamid, err = emitter.Emit(ctx, event2, d2)
 	if !s.NoError(err) {
 		return
 	}

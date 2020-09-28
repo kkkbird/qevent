@@ -1,9 +1,10 @@
 package qevent
 
 import (
+	"context"
 	"sync"
 
-	"github.com/go-redis/redis/v7"
+	"github.com/go-redis/redis/v8"
 	"github.com/kkkbird/qstream"
 )
 
@@ -51,7 +52,7 @@ func NewEmitter(client *redis.Client, opts ...EmitterOpts) *Emitter {
 	return e
 }
 
-func (e *Emitter) Emit(event string, data interface{}) (string, error) {
+func (e *Emitter) Emit(ctx context.Context, event string, data interface{}) (string, error) {
 	pub, ok := e.eventPubs.Load(event)
 
 	if !ok {
@@ -71,5 +72,5 @@ func (e *Emitter) Emit(event string, data interface{}) (string, error) {
 		pub, _ = e.eventPubs.LoadOrStore(event, qstream.NewRedisStreamPub(e.client, event, e.maxLength, codec))
 	}
 
-	return pub.(qstream.StreamPub).Send(data)
+	return pub.(qstream.StreamPub).Send(ctx, data)
 }
