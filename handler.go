@@ -18,11 +18,10 @@ var (
 )
 
 var (
-	defaultWorkCount       = 5
-	defaultGroupStartID    = "0-0"
-	maxEventClaimCount     = 10
-	readEventBlockInterval = 100 * time.Millisecond
-	ErrCloseTimeout        = errors.New("Close timeout")
+	defaultWorkCount    = 5
+	defaultGroupStartID = "0-0"
+	maxEventClaimCount  = 10
+	ErrCloseTimeout     = errors.New("Close timeout")
 )
 
 type Handler struct {
@@ -334,9 +333,13 @@ func (h *Handler) runStreamReader(ctx context.Context) (*qstream.RedisStreamGrou
 						continue
 					}
 				} else {
-					result, err = sub.Read(ctx, int64(h.workerCount), readEventBlockInterval, lastIDs...) // won't return redis.Nil if read not acked message when starting
+					// 1. won't return redis.Nil if read not acked message when starting
+					// 2. block when checkPendingDuration==0
+					result, err = sub.Read(ctx, int64(h.workerCount), h.checkPendingDuration, lastIDs...)
 
 					if err == redis.Nil {
+						continue
+					} else if err == context.Canceled {
 						continue
 					}
 				}
