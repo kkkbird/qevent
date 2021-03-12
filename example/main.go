@@ -1,10 +1,3 @@
-# qevent
-
-event system base on qstream, which use redis stream as message queue.
-
-## example
-
-```go
 package main
 
 import (
@@ -55,6 +48,7 @@ func main() {
 
 	// init event emitter
 	emitter := qevent.NewEmitter(rdb, qevent.WithCodecFunc(func(event string) qstream.DataCodec {
+		// we can just return qstream.JsonCodec(TestEvent{}) if only one event is used
 		switch event {
 		case TestEventName:
 			return qstream.JsonCodec(TestEvent{})
@@ -65,7 +59,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// emit some events
+	// emit some event in the routine
 	go func() {
 		for i := 0; i < 3; i++ {
 			emitter.Emit(ctx, TestEventName, NewTestEvent("hello world", i))
@@ -99,14 +93,3 @@ func main() {
 	<-ctx.Done()
 	log.Info("Done!!")
 }
-```
-
-Output
-
-```shell
-time="2021-03-12T12:23:34+08:00" level=info msg="receive event(0): hello world"
-time="2021-03-12T12:23:35+08:00" level=info msg="receive event(1): hello world"
-time="2021-03-12T12:23:36+08:00" level=info msg="receive event(2): hello world"
-time="2021-03-12T12:23:37+08:00" level=info msg="receive event(-1): goodbye"
-time="2021-03-12T12:23:37+08:00" level=info msg="Done!!"
-```
