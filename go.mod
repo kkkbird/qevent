@@ -4,9 +4,9 @@ go 1.17
 
 require (
 	github.com/go-redis/redis/v8 v8.11.3
-	github.com/kkkbird/qapp v0.0.0-20201221094717-509fb018ad18
-	github.com/kkkbird/qlog v0.0.0-20201217120852-62b87cd08f16
-	github.com/kkkbird/qstream v0.0.0-20200927100640-859bb24228a4
+	github.com/kkkbird/qapp v0.0.0-20210926073152-246d81d0526c
+	github.com/kkkbird/qlog v0.0.0-20210926071925-016768e70340
+	github.com/kkkbird/qstream v0.0.0-20210926095811-0989e83b296d
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/viper v1.9.0
 	github.com/stretchr/testify v1.7.0
@@ -41,7 +41,7 @@ require (
 	github.com/spf13/cast v1.4.1 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/stretchr/objx v0.1.1 // indirect
+	github.com/stretchr/objx v0.3.0 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
 	github.com/ugorji/go/codec v1.2.6 // indirect
 	github.com/vmihailenco/msgpack/v4 v4.3.12 // indirect
@@ -49,9 +49,9 @@ require (
 	go.opentelemetry.io/otel v1.0.0 // indirect
 	go.opentelemetry.io/otel/metric v0.23.0 // indirect
 	go.opentelemetry.io/otel/trace v1.0.0 // indirect
-	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
 	golang.org/x/net v0.0.0-20210924151903-3ad01bbaa167 // indirect
-	golang.org/x/sys v0.0.0-20210925032602-92d5a993a665 // indirect
+	golang.org/x/sys v0.0.0-20210927052749-1cf2251ac284 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20210924002016-3dee208752a0 // indirect
