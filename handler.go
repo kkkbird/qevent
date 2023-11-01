@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/kkkbird/qstream"
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 )
 
@@ -214,7 +214,7 @@ func (h *Handler) checkPending(ctx context.Context, lastPendingIDs []string) (ma
 				err error
 			)
 
-			// TODO: change back after this bug fixed: https://github.com/go-redis/redis/issues/1202
+			// TODO: change back after this bug fixed: https://github.com/redis/go-redis/v9/issues/1202
 			// 2020/3/14, bug still remain on v7.2.0, but pool.go will remove bad connection and following call will be ok
 			if false {
 				lastPendingIDs[i] = claimIds[len(claimIds)-1]

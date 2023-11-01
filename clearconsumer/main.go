@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/kkkbird/qapp"
+	"github.com/redis/go-redis/v9"
 
 	_ "github.com/kkkbird/qlog"
 	"github.com/sirupsen/logrus"

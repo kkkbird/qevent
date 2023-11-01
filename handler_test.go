@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/kkkbird/qstream"
+	"github.com/redis/go-redis/v9"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
@@ -22,9 +22,10 @@ func (s *HandlerTestSuite) SetupSuite() {
 	viper.SetDefault("redis.password", "12345678")
 
 	s.redisClient = redis.NewClient(&redis.Options{
-		Addr:     viper.GetString("redis.url"),
-		Password: viper.GetString("redis.password"),
-		DB:       0,
+		Addr:                  viper.GetString("redis.url"),
+		Password:              viper.GetString("redis.password"),
+		DB:                    0,
+		ContextTimeoutEnabled: true,
 	})
 }
 
@@ -469,6 +470,7 @@ func (s *HandlerTestSuite) TestHandleBugXClaim() {
 		log.Info(i, " ", len, " ", err)
 	}
 }
+
 func TestHandler(t *testing.T) {
 	suite.Run(t, new(HandlerTestSuite))
 }

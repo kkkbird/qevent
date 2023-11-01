@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/kkkbird/qevent"
 	_ "github.com/kkkbird/qlog"
 	"github.com/kkkbird/qstream"
+	"github.com/redis/go-redis/v9"
 
 	log "github.com/sirupsen/logrus"
 )

@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 )
 
@@ -32,13 +32,13 @@ func (si *StreamInfo) Clear(client *redis.Client) error {
 
 		consumers, err := client.XInfoConsumers(ctx, si.Name, g.Name).Result()
 		if err != nil {
-			log.Errorf("get (%s) xinfo consumer fail(%s):%v", si.Name, g, err)
+			log.Errorf("get (%s) xinfo consumer fail(%s):%v", si.Name, g.Name, err)
 			return err
 		}
 
 		var removed int
 		for _, c := range consumers {
-			if c.Idle > maxIdle.Milliseconds() {
+			if c.Idle > maxIdle {
 				if c.Pending > 0 {
 					log.Warnf("consumer (%s) as %d pending message", c.Name, c.Pending)
 					continue
