@@ -23,11 +23,12 @@ var (
 func initRedis(ctx context.Context) (qapp.CleanFunc, error) {
 	setting := "redis"
 	opts := &redis.Options{
-		Addr:         viper.GetString(setting + ".addr"),
-		Password:     viper.GetString(setting + ".password"),
-		PoolSize:     viper.GetInt(setting + ".poolsize"),
-		MinIdleConns: viper.GetInt(setting + ".minidleconns"),
-		DB:           viper.GetInt(setting + ".db"),
+		Addr:                  viper.GetString(setting + ".addr"),
+		Password:              viper.GetString(setting + ".password"),
+		PoolSize:              viper.GetInt(setting + ".poolsize"),
+		MinIdleConns:          viper.GetInt(setting + ".minidleconns"),
+		DB:                    viper.GetInt(setting + ".db"),
+		ContextTimeoutEnabled: true,
 	}
 
 	log.Debugf("open redis(%s), addr=%s, db=%d, poolsize=%d, minidleconns=%d",

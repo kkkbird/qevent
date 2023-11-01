@@ -33,11 +33,12 @@ func NewTestEvent(content string, data int) *TestEvent {
 
 func main() {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:         "192.168.1.231:30790",
-		Password:     "12345678",
-		PoolSize:     10,
-		MinIdleConns: 5,
-		DB:           0,
+		Addr:                  "192.168.1.231:30790",
+		Password:              "12345678",
+		PoolSize:              10,
+		MinIdleConns:          5,
+		DB:                    0,
+		ContextTimeoutEnabled: true,
 	})
 
 	_, err := rdb.Ping(context.Background()).Result()
