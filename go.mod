@@ -7,7 +7,7 @@ toolchain go1.23.2
 require (
 	github.com/kkkbird/qapp v0.0.0-20240828061211-62631add5b8a
 	github.com/kkkbird/qlog v0.0.0-20240828055218-3fc1001996f5
-	github.com/kkkbird/qstream v0.1.0
+	github.com/kkkbird/qstream v0.1.1
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
@@ -73,4 +73,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// replace github.com/redis/go-redis/v9 => github.com/kkkbird/go-redis/v9 v9.0.0-20240802123143-d706765e3060
+replace github.com/redis/go-redis/v9 => github.com/kkkbird/go-redis/v9 v9.7.0
